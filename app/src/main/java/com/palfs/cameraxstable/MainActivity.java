@@ -1,17 +1,26 @@
 package com.palfs.cameraxstable;
 
 import android.content.ContentValues;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Paint;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.View;
+import android.widget.CompoundButton;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageCapture;
 import androidx.camera.core.ImageCaptureException;
+import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.video.MediaStoreOutputOptions;
@@ -39,6 +48,7 @@ public class MainActivity extends AppCompatActivity {
     private VideoCapture<Recorder> videoCapture;
     private Recorder recorder;
     private Recording recording;
+    private boolean toggleGrayScale;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,6 +83,17 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        mainBinding.toggleGrayscale.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean checked) {
+                if (checked){
+                    toggleGrayScale = true;
+                } else {
+                    toggleGrayScale = false;
+                }
+            }
+        });
+
         ListenableFuture<ProcessCameraProvider> cameraProviderListenableFuture = ProcessCameraProvider.getInstance(this);
         cameraProviderListenableFuture.addListener(() -> {
 
@@ -88,6 +109,56 @@ public class MainActivity extends AppCompatActivity {
 
         }, ContextCompat.getMainExecutor(this));
 
+
+    }
+
+
+    private void startCameraX(ProcessCameraProvider cameraProvider) {
+        CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
+
+
+        imageCapture = new ImageCapture.Builder().build();
+
+        recorder = new Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.HIGHEST)).build();
+
+        videoCapture = VideoCapture.withOutput(recorder);
+
+        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder().build();
+        imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this), new ImageAnalysis.Analyzer() {
+            @Override
+            public void analyze(@NonNull ImageProxy image) {
+                final Bitmap bitmap = BitmapUtils.getBitmap(image);
+
+                image.close();
+
+                if (bitmap != null){
+
+                    Bitmap finalBitmap;
+
+                    if (toggleGrayScale)
+                        finalBitmap = toGrayscale(bitmap);
+                    else
+                        finalBitmap = bitmap;
+
+                    runOnUiThread(() -> {
+                        mainBinding.ivPreview.setImageBitmap(finalBitmap);
+                    });
+
+                }
+
+
+            }
+        });
+
+        try {
+
+            cameraProvider.unbindAll();
+
+            cameraProvider.bindToLifecycle(this, cameraSelector, imageAnalysis, imageCapture, videoCapture);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
     }
 
@@ -161,30 +232,20 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    private void startCameraX(ProcessCameraProvider cameraProvider) {
-        CameraSelector cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA;
+    public Bitmap toGrayscale(Bitmap bmpOriginal)
+    {
+        int width, height;
+        height = bmpOriginal.getHeight();
+        width = bmpOriginal.getWidth();
 
-
-        Preview preview = new Preview.Builder().build();
-
-        preview.setSurfaceProvider(mainBinding.pvPreview.getSurfaceProvider());
-
-        imageCapture = new ImageCapture.Builder().build();
-
-        recorder = new Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.HIGHEST)).build();
-
-
-        videoCapture = VideoCapture.withOutput(recorder);
-
-        try {
-
-            cameraProvider.unbindAll();
-
-            cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture, videoCapture);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
+        Bitmap bmpGrayscale = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmpGrayscale);
+        Paint paint = new Paint();
+        ColorMatrix cm = new ColorMatrix();
+        cm.setSaturation(0);
+        ColorMatrixColorFilter f = new ColorMatrixColorFilter(cm);
+        paint.setColorFilter(f);
+        c.drawBitmap(bmpOriginal, 0, 0, paint);
+        return bmpGrayscale;
     }
 }
